@@ -306,10 +306,67 @@ cal.conditional_formatting.add(grid, FormulaRule(formula=[f'AND(C$4<>"",N(C{CNT0
 cal.conditional_formatting.add(grid, FormulaRule(formula=['C$4=""'], fill=fill("EEEEEE"), stopIfTrue=True))
 cal.freeze_panes = "C6"
 
+# ------------------------------------------------------------------ 지출
+st["F16"], st["G16"] = "기본 환율 (1 EGP = 원)", 28
+st["F16"].border = BOX
+st["G16"].fill = INPUT_FILL; st["G16"].font = F(color="0000FF"); st["G16"].border = BOX; st["G16"].number_format = '#,##0.0"원"'
+st["F17"] = "※ 28원은 예시값 — 실제 환율로 고치세요. 지출 탭에서 달마다 따로 넣을 수도 있어요"
+st["F17"].font = F(italic=True, color="777777", size=9)
+RATE = f"{S}$G$16"
+
+ex = wb.create_sheet("지출")
+ex["A1"] = "운영 지출 (월별)"; ex["A1"].font = F(bold=True, size=14)
+ex["A2"] = ("이집트 파운드(EGP)로 입력하세요. 환율 칸을 비우면 설정 탭의 기본 환율로 원화 환산 → "
+            "통계 탭의 지출·순이익에 반영됩니다.")
+ex["A2"].font = F(color="555555", size=9)
+ITEMS = ["가스", "전기", "수도", "인터넷", "수리", "비품", "기타"]
+eh = (["월"] + [f"{x}\n(EGP)" for x in ITEMS] + ["환율\n(원/EGP, 빈칸=기본)", "합계\n(EGP)", "합계\n(원)", "메모", "적용 환율"])
+for j, h in enumerate(eh, start=1):
+    c = ex.cell(4, j, h); c.font = HEAD_FONT; c.fill = HEAD_FILL; c.alignment = CENTER; c.border = BOX
+ex.row_dimensions[4].height = 34
+EX0, EX1 = 5, 200
+start_year = 2026 if TEST else 2027
+for k in range(36):
+    r = EX0 + k
+    y, m = start_year + k // 12, k % 12 + 1
+    ex[f"A{r}"] = dt.date(y, m, 1); ex[f"A{r}"].number_format = "yyyy-mm"
+    ex[f"A{r}"].font = F(bold=True); ex[f"A{r}"].alignment = CENTER
+for r in range(EX0, EX0 + 36):
+    for ci in range(2, 10):
+        c = ex.cell(r, ci); c.fill = INPUT_FILL; c.font = F(color="0000FF"); c.number_format = '#,##0;-#,##0;""'
+    ex[f"I{r}"].number_format = '#,##0.0;-#,##0.0;""'
+    ex[f"J{r}"] = f'=IF(COUNT(B{r}:H{r})=0,"",SUM(B{r}:H{r}))'; ex[f"J{r}"].number_format = '#,##0'
+    ex[f"K{r}"] = f'=IF(J{r}="","",J{r}*M{r})'; ex[f"K{r}"].number_format = WON
+    ex[f"M{r}"] = f'=IF(I{r}="",{RATE},I{r})'
+    ex[f"L{r}"].fill = INPUT_FILL; ex[f"L{r}"].font = F(color="0000FF")
+    for col in "JK": ex[f"{col}{r}"].fill = AUTO_FILL; ex[f"{col}{r}"].font = F(bold=True)
+    for ci in range(1, 13): ex.cell(r, ci).border = BOX
+ex.column_dimensions["M"].hidden = True
+for col, w in zip("ABCDEFGHIJKL", [10, 9, 9, 9, 9, 9, 9, 9, 13, 11, 13, 24]):
+    ex.column_dimensions[col].width = w
+ex.freeze_panes = "B5"
+ex[f"A{EX0+37}"] = "↑ 더 필요하면 아래 줄에 월(예: 2030-01-01)을 넣고 이어서 쓰세요."
+ex[f"A{EX0+37}"].font = F(italic=True, color="777777", size=9)
+for r in range(EX0 + 36, EX1 + 1):  # 여분 줄도 계산되게
+    ex[f"J{r}"] = f'=IF(COUNT(B{r}:H{r})=0,"",SUM(B{r}:H{r}))'
+    ex[f"K{r}"] = f'=IF(J{r}="","",J{r}*M{r})'
+    ex[f"M{r}"] = f'=IF(I{r}="",{RATE},I{r})'
+    ex[f"K{r}"].number_format = WON
+if SAMPLE:
+    demo = {0: [350, 2600, 420, 600, 0, 850, 150, None, "1월 고지서"],
+            1: [380, 2900, 450, 600, 1200, 300, 0, 29.5, "2월: 에어컨 수리, 환율 직접 입력"]}
+    cols = [2, 3, 4, 5, 6, 7, 8, 9, 12]  # B~H 항목, I 환율, L 메모
+    for k, vals in demo.items():
+        for j, v in enumerate(vals):
+            if v is not None: ex.cell(EX0 + k, cols[j], v)
+
+def EX(col): return f"'지출'!${col}${EX0}:${col}${EX1}"
+
 # ------------------------------------------------------------------ 통계
 sx = wb.create_sheet("통계", 2)
 sx["A1"] = "통계"; sx["A1"].font = F(bold=True, size=14)
-sx["A2"] = "매출은 '묵은 날' 기준으로 달마다 나눠 잡습니다 (확정 예약만). 입금 내역은 예약 탭의 입금일·입금액으로 확인."
+sx["A2"] = ("매출은 '묵은 날' 기준으로 달마다 나눠 잡습니다 (확정 예약만). 지출은 지출 탭의 원화 합계. "
+            "순이익 = 순매출(할인 뺀 매출) − 지출.")
 sx["A2"].font = F(size=9, color="555555")
 sx["A3"], sx["B3"], sx["C3"], sx["D3"] = "연도", 2026 if TEST else 2027, "월", 10 if TEST else 1
 for c in ("B3", "D3"): sx[c].fill = INPUT_FILL; sx[c].font = F(bold=True, color="0000FF", size=12); sx[c].border = BOX; sx[c].alignment = CENTER
@@ -318,78 +375,101 @@ sx["F3"] = "=DATE($B$3,$D$3,1)"; sx["G3"] = "=EDATE(F3,1)"
 sx["F3"].number_format = DATE; sx["G3"].number_format = DATE
 sx["E3"] = "기간"; sx["H3"] = "까지(미포함)"
 for c in ("E3", "F3", "G3", "H3"): sx[c].font = F(size=9, color="999999")
+MLABEL = '$B$3&"년 "&$D$3&"월"'
 
 def ov(ms, me):
     G, H = R("G"), R("H")
     return (f"(({G}<{me})*({H}>{ms})*((({H}<{me})*{H}+({H}>={me})*{me})-((({G}>{ms})*{G}+({G}<={ms})*{ms}))))")
 OK = f'({R("A")}="확정")'
 def sp(*parts): return "SUMPRODUCT(" + "*".join(parts) + ")"
+def exp_total(a, b): return f'SUMIFS({EX("K")},{EX("A")},">="&{a},{EX("A")},"<"&{b})'
+def exp_item(col, a, b): return sp(f'({EX("A")}>={a})', f'({EX("A")}<{b})', EX(col), EX("M"))
+def exp_egp(col, a, b): return sp(f'({EX("A")}>={a})', f'({EX("A")}<{b})', EX(col))
 
 ms, me = "$F$3", "$G$3"
 OV = ov(ms, me)
 cap_all = f"SUM({S}$D$5:$D$10)"
-kpis = [
+
+def title(cell, text):
+    sx[cell] = f'={MLABEL}&" {text}"'; sx[cell].font = F(bold=True, size=11)
+
+title("A5", "요약")
+cards = [
     ("순매출", "=" + sp(OK, OV, R("AG")), WON),
-    ("기본 매출 (할인 전)", "=" + sp(OK, OV, R("AC")), WON),
-    ("할인 합계", "=B8+B9+B10", WON),
+    ("지출", "=" + exp_total(ms, me), WON),
+    ("순이익", "=A7-C7", WON),
+    ("할인 전 매출", "=" + sp(OK, OV, R("AC")), WON),
+    ("할인 합계", "=B10+B11+B12", WON),
     ("가동률", f"=IFERROR({sp(OK, OV)}/({cap_all}*({me}-{ms})),0)", "0.0%"),
     ("투숙 손님 수", f"={sp(OK, f'({OV}>0)')}", '0"명"'),
     ("평균 숙박일 (이 달 체크인)", f'=IFERROR(AVERAGEIFS({R("T")},{R("A")},"확정",{R("G")},">="&{ms},{R("G")},"<"&{me}),0)', '0.0"박"'),
 ]
-sx["A5"] = "이번 달 요약"; sx["A5"].font = F(bold=True, size=11)
-# 카드형 요약: 6행 라벨, 7행 값 (A,C,E,G,I,K)
-for i, (lab, fm, nf) in enumerate(kpis):
+for i, (lab, fm, nf) in enumerate(cards):
     col = CL(1 + i * 2); col2 = CL(2 + i * 2)
     sx.merge_cells(f"{col}6:{col2}6"); sx.merge_cells(f"{col}7:{col2}7")
     sx[f"{col}6"] = lab; sx[f"{col}6"].font = F(size=9, color="666666"); sx[f"{col}6"].alignment = CENTER
-    sx[f"{col}7"] = fm.replace("B8+B9+B10", "B10+B11+B12"); sx[f"{col}7"].number_format = nf
-    sx[f"{col}7"].font = F(bold=True, size=14); sx[f"{col}7"].alignment = CENTER
+    sx[f"{col}7"] = fm; sx[f"{col}7"].number_format = nf
+    sx[f"{col}7"].font = F(bold=True, size=14, color="1B5E20" if lab == "순이익" else "000000"); sx[f"{col}7"].alignment = CENTER
     for c in (f"{col}6", f"{col2}6", f"{col}7", f"{col2}7"):
-        sx[c].fill = fill("F5F7FA"); sx[c].border = BOX
+        sx[c].fill = fill("E8F5E9" if lab == "순이익" else "F5F7FA"); sx[c].border = BOX
+sx.conditional_formatting.add("E7", CellIsRule(operator="lessThan", formula=["0"], font=Font(bold=True, color="C62828")))
 sx.row_dimensions[7].height = 30
-sx["E7"] = "=B10+B11+B12"
 
-sx["A9"], sx["B9"] = "할인 종류별", "금액"
+def head(r, c0, labels):
+    for j, h in enumerate(labels):
+        c = sx.cell(r, c0 + j, h); c.font = HEAD_FONT; c.fill = HEAD_FILL; c.alignment = CENTER
+
+head(9, 1, ["할인 종류별", "금액"])
 rowsd = [("다이빙 연계", sp(OK, OV, R("AD"))), ("장기·재방문", sp(OK, OV, R("AE"))), ("기타 조정", sp(OK, OV, R("AF")))]
 for i, (lab, fm) in enumerate(rowsd):
     sx[f"A{10+i}"] = lab; sx[f"B{10+i}"] = "=" + fm; sx[f"B{10+i}"].number_format = WON
-sx["D9"], sx["E9"] = "돈 관리", "금액"
+    for col in "AB": sx[f"{col}{10+i}"].border = BOX
+head(9, 4, ["돈 관리", "금액"])
 money = [("입금대기 예상 매출 (이 달)", "=" + sp(f'({R("A")}="입금대기")', OV, R("AG"))),
          ("미수금 (확정 전체)", f'=SUMIFS({R("Z")},{R("A")},"확정")'),
          ("취소 위약금 (이 달 취소)", "=" + sp(f'({R("A")}="취소")', f'({R("S")}>={ms})', f'({R("S")}<{me})', f'({R("R")}-{R("AA")})'))]
 for i, (lab, fm) in enumerate(money):
     sx[f"D{10+i}"] = lab; sx[f"E{10+i}"] = fm; sx[f"E{10+i}"].number_format = WON
-for c in ("A9", "B9", "D9", "E9"):
-    sx[c].font = HEAD_FONT; sx[c].fill = HEAD_FILL; sx[c].alignment = CENTER
+    for col in "DE": sx[f"{col}{10+i}"].border = BOX
+
+head(9, 7, ["지출 항목", "EGP", "원화"])
+for i, it in enumerate(ITEMS):
+    r = 10 + i; col = CL(2 + i)
+    sx[f"G{r}"] = it
+    sx[f"H{r}"] = "=" + exp_egp(col, ms, me); sx[f"H{r}"].number_format = '#,##0" E£";-#,##0;"-"'
+    sx[f"I{r}"] = "=" + exp_item(col, ms, me); sx[f"I{r}"].number_format = WON
+    for c in "GHI": sx[f"{c}{r}"].border = BOX
+sx["G17"] = "합계"; sx["H17"] = "=SUM(H10:H16)"; sx["I17"] = "=SUM(I10:I16)"
+sx["H17"].number_format = '#,##0" E£"'; sx["I17"].number_format = WON
+for c in "GHI": sx[f"{c}17"].font = F(bold=True); sx[f"{c}17"].border = BOX
 
 # 객실별
-sx["A15"] = "객실별"; sx["A15"].font = F(bold=True, size=11)
-hd = ["객실", "정원", "숙박(박)", "가동률", "기본 매출", "할인", "순매출"]
-for j, h in enumerate(hd):
-    c = sx.cell(16, 1 + j, h); c.font = HEAD_FONT; c.fill = HEAD_FILL; c.alignment = CENTER
+RB = 20
+title(f"A{RB}", "객실별")
+head(RB + 1, 1, ["객실", "정원", "숙박(박)", "가동률", "할인 전 매출", "할인", "순매출"])
 for i in range(6):
-    r = 17 + i; RM = f'({R("F")}=$A{r})'
+    r = RB + 2 + i; RM = f'({R("F")}=$A{r})'
     sx[f"A{r}"] = f"={S}A{5+i}"; sx[f"B{r}"] = f"={S}D{5+i}"
     sx[f"C{r}"] = "=" + sp(OK, RM, OV)
     sx[f"D{r}"] = f"=IFERROR(C{r}/(B{r}*({me}-{ms})),0)"
     sx[f"E{r}"] = "=" + sp(OK, RM, OV, R("AC"))
     sx[f"F{r}"] = f"=E{r}-G{r}"
     sx[f"G{r}"] = "=" + sp(OK, RM, OV, R("AG"))
-sx["A23"] = "합계"; sx["B23"] = "=SUM(B17:B22)"; sx["C23"] = "=SUM(C17:C22)"
-sx["D23"] = f"=IFERROR(C23/(B23*({me}-{ms})),0)"
-for col in "EFG": sx[f"{col}23"] = f"=SUM({col}17:{col}22)"
-for r in range(17, 24):
+rt = RB + 8
+sx[f"A{rt}"] = "합계"; sx[f"B{rt}"] = f"=SUM(B{RB+2}:B{rt-1})"; sx[f"C{rt}"] = f"=SUM(C{RB+2}:C{rt-1})"
+sx[f"D{rt}"] = f"=IFERROR(C{rt}/(B{rt}*({me}-{ms})),0)"
+for col in "EFG": sx[f"{col}{rt}"] = f"=SUM({col}{RB+2}:{col}{rt-1})"
+for r in range(RB + 2, rt + 1):
     sx[f"D{r}"].number_format = "0.0%"
     for col in "EFG": sx[f"{col}{r}"].number_format = WON
     for col in "ABCDEFG": sx[f"{col}{r}"].border = BOX
-for col in "ABCDEFG": sx[f"{col}23"].font = F(bold=True)
+for col in "ABCDEFG": sx[f"{col}{rt}"].font = F(bold=True)
 
 # 예약경로별
-sx["I15"] = "예약경로별"; sx["I15"].font = F(bold=True, size=11)
-for j, h in enumerate(["경로", "손님 수", "순매출"]):
-    c = sx.cell(16, 9 + j, h); c.font = HEAD_FONT; c.fill = HEAD_FILL; c.alignment = CENTER
+title(f"I{RB}", "예약경로별")
+head(RB + 1, 9, ["경로", "손님 수", "순매출"])
 for i in range(11):
-    r = 17 + i; RT = f'({R("E")}=$I{r})'
+    r = RB + 2 + i; RT = f'({R("E")}=$I{r})'
     sx[f"I{r}"] = f'=IF({S}L{5+i}="","",{S}L{5+i})'
     sx[f"J{r}"] = f'=IF(I{r}="","",{sp(OK, RT, f"({OV}>0)")})'
     sx[f"K{r}"] = f'=IF(I{r}="","",{sp(OK, RT, OV, R("AG"))})'
@@ -397,38 +477,45 @@ for i in range(11):
     for col in "IJK": sx[f"{col}{r}"].border = BOX
 
 # 연간
-sx["A30"] = "연간 추이 (위 연도 기준)"; sx["A30"].font = F(bold=True, size=11)
-for j, h in enumerate(["월", "기본 매출", "할인", "순매출", "가동률", "투숙 손님"]):
-    c = sx.cell(31, 1 + j, h); c.font = HEAD_FONT; c.fill = HEAD_FILL; c.alignment = CENTER
+YA = 35
+sx[f"A{YA}"] = '=$B$3&"년 연간 추이"'; sx[f"A{YA}"].font = F(bold=True, size=11)
+head(YA + 1, 1, ["월", "할인 전 매출", "할인", "순매출", "지출", "순이익", "가동률", "투숙 손님"])
 for m in range(1, 13):
-    r = 31 + m
+    r = YA + 1 + m
     a, b = f"DATE($B$3,{m},1)", f"EDATE(DATE($B$3,{m},1),1)"
     OVm = ov(a, b)
     sx[f"A{r}"] = f"{m}월"
     sx[f"B{r}"] = "=" + sp(OK, OVm, R("AC"))
     sx[f"C{r}"] = f"=B{r}-D{r}"
     sx[f"D{r}"] = "=" + sp(OK, OVm, R("AG"))
-    sx[f"E{r}"] = f"=IFERROR({sp(OK, OVm)}/({cap_all}*({b}-{a})),0)"
-    sx[f"F{r}"] = f"={sp(OK, f'({OVm}>0)')}"
-    for col in "BCD": sx[f"{col}{r}"].number_format = WON
-    sx[f"E{r}"].number_format = "0.0%"; sx[f"F{r}"].number_format = '0"명"'
-    for col in "ABCDEF": sx[f"{col}{r}"].border = BOX
-sx["A44"] = "합계"
-for col in "BCD": sx[f"{col}44"] = f"=SUM({col}32:{col}43)"; sx[f"{col}44"].number_format = WON
-sx["E44"] = "=AVERAGE(E32:E43)"; sx["E44"].number_format = "0.0%"
-for col in "ABCDE": sx[f"{col}44"].font = F(bold=True); sx[f"{col}44"].border = BOX
-sx["F44"] = "※ 손님 수는 달마다 세므로 합계 없음"; sx["F44"].font = F(size=8, color="999999")
+    sx[f"E{r}"] = "=" + exp_total(a, b)
+    sx[f"F{r}"] = f"=D{r}-E{r}"
+    sx[f"G{r}"] = f"=IFERROR({sp(OK, OVm)}/({cap_all}*({b}-{a})),0)"
+    sx[f"H{r}"] = f"={sp(OK, f'({OVm}>0)')}"
+    for col in "BCDEF": sx[f"{col}{r}"].number_format = WON
+    sx[f"G{r}"].number_format = "0.0%"; sx[f"H{r}"].number_format = '0"명"'
+    for col in "ABCDEFGH": sx[f"{col}{r}"].border = BOX
+YT = YA + 14
+sx[f"A{YT}"] = "합계"
+for col in "BCDEF": sx[f"{col}{YT}"] = f"=SUM({col}{YA+2}:{col}{YT-1})"; sx[f"{col}{YT}"].number_format = WON
+sx[f"G{YT}"] = f"=AVERAGE(G{YA+2}:G{YT-1})"; sx[f"G{YT}"].number_format = "0.0%"
+for col in "ABCDEFGH": sx[f"{col}{YT}"].font = F(bold=True); sx[f"{col}{YT}"].border = BOX
+sx[f"A{YT+1}"] = "※ 손님 수는 달마다 세므로 합계 없음 · 가동률 합계는 12개월 평균"; sx[f"A{YT+1}"].font = F(size=8, color="999999")
+sx.conditional_formatting.add(f"F{YA+2}:F{YT}", CellIsRule(operator="lessThan", formula=["0"], font=Font(bold=True, color="C62828")))
 
-ch = BarChart(); ch.type = "col"; ch.title = "월별 순매출"; ch.style = 10
-ch.add_data(Reference(sx, min_col=4, min_row=31, max_row=43), titles_from_data=True)
-ch.set_categories(Reference(sx, min_col=1, min_row=32, max_row=43))
-ch.height, ch.width = 7.5, 16
-ch.roundedCorners = False; ch.legend = None
+ch = BarChart(); ch.type = "col"; ch.title = "월별 순매출 · 지출 · 순이익"; ch.style = 10; ch.grouping = "clustered"
+ch.add_data(Reference(sx, min_col=4, max_col=6, min_row=YA + 1, max_row=YT - 1), titles_from_data=True)
+ch.set_categories(Reference(sx, min_col=1, min_row=YA + 2, max_row=YT - 1))
+ch.height, ch.width = 8.5, 20
+ch.roundedCorners = False; ch.legend.position = "b"; ch.legend.overlay = False
 ch.x_axis.delete = False; ch.y_axis.delete = False; ch.title.overlay = False
 ch.y_axis.numFmt = '#,##0'
-sx.add_chart(ch, "H30")
-for col, w in zip("ABCDEFGHIJKL", [24, 14, 12, 12, 24, 14, 14, 4, 14, 10, 14, 14]):
+sx.add_chart(ch, f"J{YA}")
+for col, w in zip("ABCDEFGHIJKLMNOP", [16, 14, 12, 26, 14, 14, 12, 12, 14, 10, 14, 12, 12, 12, 12, 12]):
     sx.column_dimensions[col].width = w
+
+wb._sheets = [wb[n] for n in ["예약", "달력", "통계", "지출", "설정"]]
+
 
 for sh in wb.worksheets:
     sh.sheet_view.showGridLines = False if sh.title != "예약" else True
