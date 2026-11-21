@@ -47,13 +47,50 @@ st["A1"] = "설정 — 요금·정원·할인 기본값이 바뀌면 여기만 �
 rooms = [("2호점 2인실", "2호점", 30000, 2), ("2호점 3인실", "2호점", 25000, 3),
          ("3호점 2인실 A", "3호점", 30000, 2), ("3호점 2인실 B", "3호점", 30000, 2),
          ("4호점 1인실", "4호점", 40000, 1), ("4호점 2인실 B", "4호점", 30000, 2)]
-for i, h in enumerate(["객실", "지점", "1박 요금(1인)", "정원(명)"]):
+for i, h in enumerate(["객실", "지점", "지금 요금\n(자동)", "정원(명)"]):
     c = st.cell(4, 1 + i, h); c.font = HEAD_FONT; c.fill = HEAD_FILL; c.alignment = CENTER
+st.row_dimensions[4].height = 30
+# 요금표 (기간별, 체크인 날짜 기준)
+PT0, PT1 = 22, 61   # 요금표 데이터 행
+PA = f"$A${PT0}:$A${PT1}"; PB = f"$B${PT0}:$G${PT1}"; PH = "$B$21:$G$21"
+def rate_at(date_expr, room_expr, sheet=""):
+    """date_expr 날짜에 적용되는 room 요금 (적용 시작일 <= 날짜 인 가장 최근 줄)"""
+    a = sheet + PA
+    start = f"SUMPRODUCT(MAX(({a}<={date_expr})*{a}))"
+    return f"INDEX({sheet}{PB},MATCH({start},{a},0),MATCH({room_expr},{sheet}{PH},0))"
 for r, row in enumerate(rooms, start=5):
     for j, v in enumerate(row):
+        if j == 2: continue
         c = st.cell(r, 1 + j, v); c.fill = INPUT_FILL; c.border = BOX; c.font = F(color="0000FF")
-    st.cell(r, 3).number_format = WON
-st["A12"] = "※ 요금 출처: 라하 하우스 안내문(1인 1박 기준). 객실 6개 고정(달력·통계가 5~10행을 사용)"; st["A12"].font = F(italic=True, color="777777", size=9)
+    st.cell(r, 3, f'=IFERROR({rate_at(f"MAX(TODAY(),MIN({PA}))", f"A{r}")},"")')
+    st.cell(r, 3).number_format = WON; st.cell(r, 3).fill = AUTO_FILL; st.cell(r, 3).border = BOX
+st["A12"] = "※ 객실 6개 고정(달력·통계가 5~10행을 사용). '지금 요금'은 아래 요금표에서 오늘 날짜 기준으로 자동 표시"
+st["A12"].font = F(italic=True, color="777777", size=9)
+
+st["A19"] = "요금표 (1인 1박) — 요금이 바뀌면 새 줄을 추가하세요. 예전 줄은 지우지 마세요(지난 예약 금액 유지)"
+st["A19"].font = F(bold=True, size=11)
+st["A20"] = ("✔ 체크인 날짜 기준: 체크인 날 적용되는 요금으로 숙박 전체를 계산합니다. "
+             "요금이 바뀌는 날에 걸쳐 묵어도 체크인 날 요금이 끝까지 유지돼요. (예: 6/25~7/5 → 10박 모두 6월 요금)")
+st["A20"].font = F(color="1B5E20", size=9, bold=True)
+st["A21"] = "적용 시작일"
+for i in range(6):
+    st.cell(21, 2 + i, f"=A{5+i}")
+for ci in range(1, 8):
+    c = st.cell(21, ci); c.font = HEAD_FONT; c.fill = HEAD_FILL; c.alignment = CENTER; c.border = BOX
+st.row_dimensions[21].height = 30
+price_rows = [(dt.date(2026 if TEST else 2027, 1, 1), [x[2] for x in rooms])]
+if len(sys.argv) > 2 and sys.argv[2] == "sample":
+    price_rows.append((dt.date(2027, 2, 1), [32000, 27000, 32000, 32000, 42000, 32000]))
+for r in range(PT0, PT1 + 1):
+    for ci in range(1, 8):
+        c = st.cell(r, ci); c.fill = INPUT_FILL; c.border = BOX; c.font = F(color="0000FF")
+        c.number_format = DATE if ci == 1 else WON
+for k, (d0, vals) in enumerate(price_rows):
+    st.cell(PT0 + k, 1, d0)
+    for j, v in enumerate(vals): st.cell(PT0 + k, 2 + j, v)
+st.cell(PT0, 9, "← 첫 줄: 안내문 요금(1인 1박)").font = F(italic=True, color="777777", size=9)
+if len(price_rows) > 1:
+    st.cell(PT0 + 1, 9, "← 예시: 2월부터 인상 (1월 체크인 손님은 2월에도 1월 요금)").font = F(italic=True, color="777777", size=9)
 
 st["F4"], st["G4"] = "할인 기본값", "값"
 st["F5"], st["G5"] = "다이빙 연계 할인 (교육 1일당)", 3000
@@ -85,20 +122,20 @@ for col, (h, vals) in lists.items():
     for r in range(5, 16):
         st[f"{col}{r}"].border = BOX; st[f"{col}{r}"].fill = INPUT_FILL
 st["L16"] = "↑ 경로 추가는 빈칸에"; st["L16"].font = F(italic=True, color="777777", size=9)
-for col, w in zip("ABCDEFGHIJKL", [16, 8, 14, 9, 2, 32, 13, 9, 2, 10, 7, 14]):
+for col, w in zip("ABCDEFGHIJKL", [16, 12, 13, 12, 12, 32, 13, 9, 2, 10, 7, 14]):
     st.column_dimensions[col].width = w
 
 # ------------------------------------------------------------------ 예약
 ws = wb.create_sheet("예약", 0)
 ws["A1"] = "라하 하우스 예약 — 예약 1건 = 1줄 (여러 달에 걸쳐도 1줄)"; ws["A1"].font = F(bold=True, size=14)
 ws["A2"] = ("노란 칸만 입력하세요. 파란 칸은 자동 계산.  ·  할인 칸은 목록에서 O 선택  ·  "
-            "할인율을 비워두면 기본값(장기 10%, 재방문 20%)  ·  확정된 예약만 매출에 잡히고, 입금대기도 달력·정원 확인에는 포함됩니다.")
+            "할인율을 비워두면 기본값(장기 10%, 재방문 20%)  ·  1박 요금은 설정 탭 요금표에서 체크인 날짜 기준  ·  확정된 예약만 매출에 잡히고, 입금대기도 달력·정원 확인에는 포함됩니다.")
 ws["A2"].font = F(color="555555", size=9)
 heads = [("상태", 9), ("이름", 9), ("성별", 5), ("연락처", 14), ("예약경로", 11), ("객실", 13),
          ("체크인", 11), ("체크아웃", 11), ("다이빙\n연계", 6), ("교육\n일수", 6), ("장기", 5), ("장기 %\n(빈칸=10%)", 9),
          ("재방문", 6), ("재방문 %\n(빈칸=20%)", 9), ("기타 조정\n(원, 빼는 금액)", 11), ("메모", 18),
          ("입금일", 11), ("입금액", 11), ("취소일", 11),
-         ("박수", 5), ("1박 요금", 9), ("기본금액", 11), ("다이빙\n할인", 9), ("장기·재방문\n할인", 11),
+         ("박수", 5), ("1박 요금\n(체크인일 기준)", 10), ("기본금액", 11), ("다이빙\n할인", 9), ("장기·재방문\n할인", 11),
          ("최종금액", 11), ("미수금", 10), ("환불액", 10), ("확인 필요", 22),
          ("1박당 기본", 9), ("1박당 다이빙", 9), ("1박당 %할인", 9), ("1박당 기타", 9), ("1박당 최종", 9)]
 NIN = 19  # A~S 입력
@@ -117,7 +154,7 @@ S = "'설정'!"
 for r in range(FIRST, LAST + 1):
     f = {}
     f["T"] = f'=IF(OR(G{r}="",H{r}=""),"",H{r}-G{r})'
-    f["U"] = f'=IF(F{r}="","",IFERROR(INDEX({S}$C$5:$C$10,MATCH(F{r},{S}$A$5:$A$10,0)),""))'
+    f["U"] = f'=IF(OR(F{r}="",G{r}=""),"",IFERROR({rate_at(f"G{r}", f"F{r}", S)},""))'
     f["V"] = f'=IF(OR(T{r}="",U{r}=""),"",T{r}*U{r})'
     f["W"] = f'=IF(V{r}="","",IF(I{r}="O",MIN(N(J{r}),T{r})*{S}$G$5,0))'
     f["X"] = (f'=IF(V{r}="","",(V{r}-W{r})*(IF(K{r}="O",IF(L{r}="",{S}$G$6,L{r}),0)'
@@ -137,6 +174,7 @@ for r in range(FIRST, LAST + 1):
                f'IF(AND({live},C{r}<>""),IF({opp}>0,"혼성 배정",""),""),'
                f'IF(AND(K{r}="O",N(T{r})<{S}$G$7),"10박 미만 장기할인",""),'
                f'IF(AND(I{r}="O",N(J{r})=0),"교육일수 없음",""),'
+               f'IF(AND(F{r}<>"",G{r}<>"",N(U{r})=0),"요금표에 요금 없음",""),'
                f'IF(AND(A{r}="확정",N(Z{r})>0,G{r}<>"",G{r}<=TODAY()),"미입금",""),'
                f'IF(AND(A{r}="취소",S{r}=""),"취소일 없음","")))')
     f["AC"] = f'=IFERROR(V{r}/T{r},0)'
@@ -207,7 +245,7 @@ samples = [
     ["확정", "윤가은", "여", "010-4444-5555", "재방문", "3호점 2인실 A", D(2027,1,8), D(2027,1,22), None, None, "O", None, "O", None, 4000, "장기+재방문 중복, 끝자리 정리", D(2026,12,30), 290000, None],
     ["취소", "문지후", "남", "카톡 jihu_m", "인스타", "4호점 2인실 B", D(2027,1,18), D(2027,1,25), None, None, None, None, None, None, None, "체크인 10일 전 취소", D(2026,12,1), 210000, D(2027,1,8)],
     ["확정", "서예린", "여", "인스타 @yerin.s", "다이빙샵소개", "2호점 3인실", D(2027,1,10), D(2027,1,16), "O", 6, None, None, None, None, None, "", D(2027,1,2), 132000, None],
-    ["확정", "배준혁", "남", "010-6666-7777", "카톡", "2호점 2인실", D(2027,2,1), D(2027,2,8), None, None, None, None, None, None, None, "혼성 경고 예시 — 방 옮겨야 함", D(2027,1,20), 210000, None],
+    ["확정", "배준혁", "남", "010-6666-7777", "카톡", "2호점 2인실", D(2027,2,1), D(2027,2,8), None, None, None, None, None, None, None, "혼성 경고 예시 — 방 옮겨야 함 · 2월 인상 요금 적용", D(2027,1,20), 224000, None],
 ]
 SAMPLE = len(sys.argv) > 2 and sys.argv[2] == "sample"
 rows = samples if SAMPLE else [example] + (tests if TEST else [])
